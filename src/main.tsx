@@ -4,6 +4,9 @@ import './index.css'
 import './App.css'
 import App from './App.tsx'
 
+document.documentElement.dataset.theme =
+  window.localStorage.getItem('mangaverse-theme') === 'light' ? 'light' : 'dark'
+
 const rootElement = document.getElementById('root')
 
 if (!rootElement) {

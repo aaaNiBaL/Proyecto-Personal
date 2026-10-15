@@ -294,47 +294,116 @@ Las etapas se consideran completas solo después de ejecutar sus pruebas relevan
 
 ### Etapa 1 — Inicio, catálogo, fichas y búsqueda
 
+**Estado de esta etapa:** interfaz, servicios, migración inicial y dos fichas
+bibliográficas iniciales con enlaces editoriales implementados en el repositorio.
+El script `supabase/seeds/catalogo_inicial.sql` debe ejecutarse desde SQL Editor
+para cargar esas fichas en el proyecto conectado. No contiene sinopsis, fechas,
+autores ni estados no verificados.
+
 - Inicio sin estadísticas inventadas, exploración, detalle de manga, títulos alternativos y búsqueda/filtros.
 - Tablas: `manga`, `manga_titles`, `genres`, `manga_genres`, `manga_credits`, `sources`, `manga_sources`.
 - Seguridad: lectura pública únicamente de contenido publicado/aprobado; escrituras deshabilitadas desde cliente no autorizado.
-- Pruebas: búsqueda exacta, alias, normalización, filtros, paginación, resultados vacíos y rutas de detalle; verificar que los alias llegan a la misma ficha.
+- Pruebas ejecutadas: lint, TypeScript, build y pruebas de interfaz con servicios simulados para alias, filtros, paginación, estado vacío y fuentes en detalle. Pendiente: probar RPC y RLS contra Supabase local con registros identificados como pruebas.
 - Pendiente: datos de catálogo reales solo se incorporan con fuente y permiso apropiados; no incluir portadas protegidas sin autorización.
 
+La migración `supabase/migrations/20261014210000_catalog.sql` añade búsqueda
+SQL normalizada con `pg_trgm`, RPCs de búsqueda/detalle/géneros y políticas
+RLS de lectura. Las funciones operan como `security invoker`; no se concede
+escritura de catálogo a `anon` ni `authenticated`. El catálogo puede cargarse
+con el script repetible `supabase/seeds/catalogo_inicial.sql`.
+
 ### Etapa 2 — Registro, autenticación y biblioteca privada
+
+**Estado:** implementada en el cliente y definida en
+`supabase/migrations/20261014220000_private_library.sql`. Debe aplicarse en el
+proyecto Supabase antes de usar registro o biblioteca. La validación real de
+políticas multiusuario requiere probar con dos cuentas en el proyecto.
 
 - Registro/inicio/cierre de sesión, biblioteca, estado de lectura, capítulo registrado, notas, puntuación personal y enlaces externos privados; exportación inicial si queda dentro del alcance acordado.
 - Tablas: `profiles`, `library_entries`, `personal_links`.
 - Seguridad: RLS por `auth.uid()`, validación estricta de URL, protección de rutas solo como UX (no como autorización), políticas de Storage privadas si se añade avatar.
-- Pruebas: persistencia tras cerrar sesión, aislamiento de bibliotecas con dos cuentas, acceso anónimo denegado, modificación/eliminación propia y acceso denegado a notas/enlaces de otra cuenta.
-- Pendiente: estadísticas compartidas y biblioteca pública desactivadas por defecto.
+- Pruebas ejecutadas: validación de formularios, confirmación de email pendiente y estados de error/vacío; lint, TypeScript y build. Pendiente: persistencia end-to-end, aislamiento con dos cuentas y prueba de permisos en Supabase. RLS restringe lecturas/escrituras de cada registro al `user_id` autenticado y enlaces al dueño de su entrada.
+- El tablero privado de lectura y logros usa
+  `supabase/migrations/20261015000000_reading_achievements.sql`. La migración
+  backfillea los hitos existentes y un trigger concede logros nuevos de forma
+  monotónica a partir de cambios en las entradas privadas de biblioteca.
+- Pendiente: exportación, estadísticas compartidas y biblioteca pública; ambas opciones de compartir permanecen desactivadas.
 
 ### Etapa 3 — Wiki colaborativa y auditoría
 
-- Proponer obras/cambios, revisión, aprobación/rechazo, historial y fusión de duplicados con revisión de consecuencias.
-- Tablas: `contributions`, `catalog_revisions`, roles editoriales y, cuando corresponda, `merge_proposals`.
-- Seguridad: propuestas aisladas del catálogo aprobado; revisión y aplicación transaccional solo por roles autorizados; auditar acciones.
-- Pruebas: propuesta pendiente no altera ficha, aprobación sí lo hace y genera revisión, rechazo conserva el catálogo, usuario no puede asignarse rol.
-- Pendiente: proceso operativo y política de moderación.
+**Estado:** flujo de propuesta de correcciones y alias, seguimiento de envíos,
+moderación y lectura del historial implementados y probados con una aprobación
+real en el proyecto Supabase conectado. La migración
+`supabase/migrations/20261014230000_wiki_contributions.sql` define las tablas,
+RLS y RPCs; la función de revisión se corrigió posteriormente en
+`supabase/migrations/20261014231000_fix_wiki_review_field_key.sql`.
+
+- Tablas: `catalog_contributions`, `catalog_revisions` y roles editoriales.
+- Seguridad: una propuesta pendiente no toca el catálogo; aprobación/rechazo y
+  registro de revisión/fuente ocurren en una única transacción. Los roles se
+  asignan mediante SQL de administrador, nunca desde el cliente.
+- Validación pendiente en Supabase: propuesta pendiente no altera ficha,
+  aprobación actualiza datos y registra cada campo, rechazo conserva catálogo,
+  falta de rol impide moderar y RLS limita propuestas propias.
+- Pendiente: fusión de duplicados, pruebas de integración y proceso operativo
+  de moderación.
 
 ### Etapa 4 — Comunidad y perfiles públicos
 
-- Perfiles públicos configurables, reseñas y puntuaciones, listas compartidas, comentarios y denuncias según prioridad.
-- Tablas: `reviews`, `lists`, `list_items`, `follows` (si se adopta), `reports`, `blocks`, `notifications`.
-- Seguridad: visibilidad explícita, control anti-spam y moderación; spoilers ocultos inicialmente; una valoración por usuario/obra; donaciones no afectan votos ni ranking.
-- Pruebas: privacidad por ajuste, spoilers, unicidad de voto, bloqueo, denuncias y autorización.
-- Pendiente: reglas de comunidad y respuesta de moderación.
+**Estado:** reseñas y puntuaciones implementadas en las fichas y definidas en
+`supabase/migrations/20261014232000_reviews_ratings.sql`. La migración debe
+aplicarse en Supabase para habilitar persistencia. La edición de perfiles está
+implementada en `/perfil`, con lectura pública opcional en `/usuario/:username`,
+y requiere aplicar `supabase/migrations/20261014233000_public_profiles.sql`.
+Las listas privadas/públicas tienen gestión autenticada en `/listas` y páginas
+compartibles en `/listas/:id`; la migración
+`supabase/migrations/20261014234000_public_manga_lists.sql` debe aplicarse
+después de perfiles y reseñas.
+Los reportes de reseñas, perfiles y listas se presentan en una cola de
+moderación en `/moderacion`, definida en
+`supabase/migrations/20261014235000_community_reports.sql`; aplica esa migración
+después de listas para activarlos. En Supabase, ejecuta solo esa nueva migración;
+no vuelvas a ejecutar las migraciones anteriores.
+Los comentarios de mangas y reseñas se habilitan con
+`supabase/migrations/20261014236000_community_comments.sql`, que amplía la
+denuncia y moderación existente; aplícala después de reportes.
+
+- La cuenta puede puntuar de 1 a 5 y escribir una reseña opcional por obra;
+  puede editarla o eliminarla. La puntuación media y el recuento son públicos.
+- Los spoilers quedan ocultos hasta que la persona lectora elige mostrarlos.
+- Cada persona puede configurar nombre de usuario, nombre público, biografía y
+  visibilidad; el perfil comienza privado y solo expone reseñas públicas cuando
+  se activa.
+- Las listas contienen hasta 100 obras publicadas; el dueño controla su título,
+  descripción y visibilidad. Las páginas públicas solo muestran listas con
+  visibilidad explícita; RLS restringe la lectura directa a las listas propias.
+- RLS limita escritura al autor y permite lectura pública solo para reseñas de
+  obras publicadas; la RPC pública devuelve únicamente reseñas, puntuaciones y
+  nombres de usuario asociados.
+- Las denuncias exigen sesión, se limitan a cinco por hora y no admiten más de
+  una pendiente por reportante/contenido. La moderación reutiliza los roles
+  `moderator`/`admin`; atender o descartar registra quién y cuándo, sin borrar
+  contenido automáticamente.
+- Los comentarios requieren sesión, admiten hasta 2000 caracteres y tienen un
+  límite de 20 por hora; quien los publica puede eliminarlos y otras cuentas
+  pueden denunciarlos para revisión.
+- Pendiente: controles anti-spam adicionales.
 
 ### Etapa 5 — Logros, cosméticos y donaciones
 
-- Logros gratuitos, galería/equipamiento cosmético y apoyo voluntario; rangos configurables y sin privilegios editoriales.
+- **Logros básicos implementados** en `supabase/migrations/20261015000000_reading_achievements.sql`, con tablero privado y siete hitos de biblioteca/lectura. Galería/equipamiento cosmético y apoyo voluntario siguen pendientes; rangos no conceden privilegios editoriales.
 - Tablas: `achievements`, `user_achievements`, `cosmetics`, `user_cosmetics`, `donations`, `donation_events` y configuración administrativa.
 - Seguridad: confirmar operaciones financieras únicamente con webhooks verificados e idempotentes; acceso a datos financieros restringido; archivos con tipo/tamaño permitidos y sin contenido ejecutable.
-- Pruebas: eventos repetidos, estado fallido/reembolso/cancelación, desbloqueo solo tras confirmación, límites de archivos y respeto de movimiento reducido.
+- Validación de logros: el trigger es idempotente y los desbloqueos se guardan solo para el propietario. Las pruebas de proveedor de pagos, eventos repetidos, reembolsos y archivos quedan pendientes hasta implementar esas funciones.
 - Pendiente: escoger proveedor compatible con Chile y revisar requisitos, comisiones, impuestos y política de reembolsos antes de habilitar cobros.
 
 ### Etapa transversal — Calidad y operación
 
 - Accesibilidad por teclado/contraste/movimiento reducido, adaptación móvil, observabilidad sin secretos, exportación/eliminación de cuenta, copias de seguridad y procedimiento de recuperación.
+- La navegación principal incorpora un enlace para saltar al contenido; todas
+  las rutas enfocan el `main` al activarlo. Los controles principales usan
+  objetivos táctiles de al menos 44 px y la navegación refluye en pantallas
+  estrechas. El CSS global conserva foco visible y respeta movimiento reducido.
 - Documentar permisos RLS, diccionario de datos, integraciones, costos, límites, pruebas y despliegue antes de la primera publicación.
 - Playwright cubre flujos críticos una vez que existan interfaz y entorno de prueba; Vitest cubre lógica y componentes.
 

@@ -1,12 +1,26 @@
-import { createClient } from '@supabase/supabase-js'
+import { createClient, type SupabaseClient } from '@supabase/supabase-js'
+import type { Database } from './database.types'
+
+let supabaseClient: SupabaseClient<Database> | null = null
+
+export function hasSupabaseConfig() {
+  return Boolean(import.meta.env.VITE_SUPABASE_URL && getSupabaseKey())
+}
+
+function getSupabaseKey() {
+  return (
+    import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY ||
+    import.meta.env.VITE_SUPABASE_ANON_KEY
+  )
+}
 
 export function createSupabaseClient() {
   const url = import.meta.env.VITE_SUPABASE_URL
-  const anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
+  const publishableKey = getSupabaseKey()
 
-  if (!url || !anonKey) {
+  if (!url || !publishableKey) {
     throw new Error(
-      'Faltan VITE_SUPABASE_URL y VITE_SUPABASE_ANON_KEY en el entorno.',
+      'Configura VITE_SUPABASE_URL y VITE_SUPABASE_PUBLISHABLE_KEY en .env.local.',
     )
   }
 
@@ -25,5 +39,9 @@ export function createSupabaseClient() {
     )
   }
 
-  return createClient(url, anonKey)
+  if (!supabaseClient) {
+    supabaseClient = createClient<Database>(url, publishableKey)
+  }
+
+  return supabaseClient
 }
